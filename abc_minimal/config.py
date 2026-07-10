@@ -123,6 +123,11 @@ MIXTURE_PRESETS: dict[str, list[MixtureComponent]] = {
         MixtureComponent("train_real", "val_real", 0.8172, "throw_plastic_bottles_in_bin"),
         MixtureComponent("train_sim", "val_sim", 0.1828, "sim_put_the_plastic_bottles_in_the_bin"),
     ],
+    # FreeMani single-task, real-only mix (no sim). Produced by
+    # `freemani-convert --to abc` -> export_mcap.py -> train_real/val_real.
+    "freemani": [
+        MixtureComponent("train_real", "val_real", 1.0, "put_the_bottle_into_the_bin"),
+    ],
 }
 
 
@@ -137,7 +142,7 @@ class TrainConfig:
     num_workers: int = 16
     train_steps: int = 75_000
 
-    mixture_preset: Literal["bottles"] = "bottles"
+    mixture_preset: Literal["bottles", "freemani"] = "bottles"
     mixture: list[MixtureComponent] = field(default_factory=list)
 
     load_pretrained: bool = False
