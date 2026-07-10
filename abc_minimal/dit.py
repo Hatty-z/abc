@@ -17,6 +17,50 @@ import torch.nn.functional as F
 
 from abc_minimal.config import ClipConfig, DiTConfig
 
+
+# --- LoRA (parameter-efficient fine-tuning) ---------------------------------
+class LoRALinear(nn.Module):
+    """Wrap an nn.Linear: freeze its weight/bias, add a trainable low-rank adapter
+    ``x @ (B @ A) * scale``. B is zero-init so training starts at the base output."""
+
+    def __init__(self, base: nn.Linear, rank: int = 16, alpha: int | None = None):
+        super().__init__()
+        self.base = base
+        for p in self.base.parameters():
+            p.requires_grad_(False)
+        self.lora_a = nn.Linear(base.in_features, rank, bias=False)
+        self.lora_b = nn.Linear(rank, base.out_features, bias=False)
+        nn.init.kaiming_uniform_(self.lora_a.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_b.weight)
+        self.scale = (alpha or rank) / rank
+
+    def forward(self, x):
+        return self.base(x) + self.scale * self.lora_b(self.lora_a(x))
+
+
+def apply_lora(module: nn.Module, rank: int = 16) -> int:
+    """Replace every nn.Linear under ``module`` with a LoRALinear (base frozen).
+    Call it on the DiT transformer (``model.blocks``) only — not the vision backbone.
+    Returns the number of wrapped layers."""
+    to_wrap = []
+    for parent_name, parent in module.named_modules():
+        if isinstance(parent, LoRALinear):
+            continue
+        # Skip nn.MultiheadAttention internals: its forward uses the functional
+        # F.multi_head_attention_forward, which reads ``out_proj.weight`` directly
+        # rather than calling the submodule — wrapping it breaks attention.
+        if isinstance(parent, nn.MultiheadAttention):
+            continue
+        for child_name, child in parent.named_children():
+            # Only wrap plain nn.Linear. LinearKMaskedBias has a masked-bias forward
+            # that a LoRA wrapper would silently drop, so leave it untouched.
+            if type(child) is nn.Linear:
+                to_wrap.append((parent, child_name, child))
+    for parent, child_name, child in to_wrap:
+        setattr(parent, child_name, LoRALinear(child, rank))
+    return len(to_wrap)
+
+
 # CLIP ViT-B/32 text encoder.
 
 SOT_TOKEN = "<|startoftext|>"

@@ -294,6 +294,28 @@ def main(config: TrainConfig):
         if rank == 0:
             print("DINOv3 bf16 autocast enabled")
 
+    if config.lora:
+        # Freeze everything, LoRA-adapt the DiT transformer blocks, then re-enable the
+        # small heads/embedders + adapters (DINO backbone + frozen LoRA bases stay off).
+        from abc_minimal.dit import apply_lora
+
+        for p in model.parameters():
+            p.requires_grad_(False)
+        n_wrapped = apply_lora(model.blocks, config.lora_rank)
+        for name, p in model.named_parameters():
+            is_lora = "lora_a" in name or "lora_b" in name
+            in_blocks = name.startswith("blocks.") or ".blocks." in name
+            if is_lora:
+                p.requires_grad_(True)   # low-rank adapters train
+            elif in_blocks or name.startswith("img_backbone"):
+                p.requires_grad_(False)  # frozen transformer (attn/norm/LoRA base) + vision
+            else:
+                p.requires_grad_(True)   # small heads/embedders outside the DiT stack
+        if rank == 0:
+            trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            print(f"LoRA enabled: wrapped {n_wrapped} Linear layers (rank {config.lora_rank}), "
+                  f"{trainable/1e6:.1f}M trainable params", flush=True)
+
     model = model.to(device)
 
     vision_params = list(model.img_backbone.parameters())

@@ -144,6 +144,12 @@ class TrainConfig:
     dino_bf16: bool = True
     compile: bool = True
 
+    # LoRA fine-tuning: freeze the base DiT and train only low-rank adapters (+ the
+    # action head). Off = full fine-tuning. `run_name` names the checkpoint subdir.
+    lora: bool = False
+    lora_rank: int = 16
+    run_name: str = "run"
+
     log_every: int = 20
     val_every: int = 2500
     val_batches: int = 4
