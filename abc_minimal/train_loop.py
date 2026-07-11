@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, Dataset, DistributedSampler
 
 from abc_minimal.config import DiTConfig, TrainConfig, validate_train_config
 from abc_minimal.dit import (
+    infer_dit_shape,
     CLIPTextEmbedder,
     DiTPolicy,
     load_pretrained,
@@ -257,8 +258,24 @@ def batch_to_device(batch, device, embedder):
 
 def main(config: TrainConfig):
     cache_root = Path(config.cache_root)
-    checkpoint_path = cache_root / "abc_dit_xl_200k_model.pt"
+    # Fine-tune from an explicit --pretrained-ckpt path if given, else the default.
+    checkpoint_path = (
+        Path(config.pretrained_ckpt).expanduser()
+        if config.pretrained_ckpt
+        else cache_root / "abc_dit_xl_200k_model.pt"
+    )
     output_dir = cache_root / "finetune_checkpoints"
+
+    # Auto-match the DiT shape to the pretrained checkpoint so fine-tuning from any
+    # ABC-DiT size works without manually passing --model.hidden-size/depth/num-heads.
+    if config.load_pretrained and checkpoint_path.exists():
+        shape = infer_dit_shape(checkpoint_path)
+        changed = {k: v for k, v in shape.items() if getattr(config.model, k) != v}
+        if changed:
+            for k, v in changed.items():
+                setattr(config.model, k, v)
+            print(f"[abc] auto-matched DiT shape to checkpoint: {changed}", flush=True)
+
     components = validate_train_config(config, cache_root, checkpoint_path)
 
     distributed = "RANK" in os.environ

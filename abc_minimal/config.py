@@ -146,6 +146,9 @@ class TrainConfig:
     mixture: list[MixtureComponent] = field(default_factory=list)
 
     load_pretrained: bool = False
+    # Explicit path to the pretrained DiT checkpoint to fine-tune from. Empty =>
+    # the default cache/abc_dit_xl_200k_model.pt. Only used when load_pretrained.
+    pretrained_ckpt: str = ""
     dino_bf16: bool = True
     compile: bool = True
 

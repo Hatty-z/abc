@@ -920,6 +920,27 @@ class DiTPolicy(nn.Module):
         return x_t
 
 
+def infer_dit_shape(ckpt_path) -> dict:
+    """Infer (hidden_size, depth, num_heads) from a checkpoint's tensors so a
+    fine-tune or deployment can match ANY ABC-DiT size (L / XL / …) without
+    manually setting --model.* dims. head_dim is 64 by convention, so
+    num_heads = hidden_size // 64. Returns {} if the checkpoint isn't a DiT."""
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False, mmap=True)
+    sd = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    sd = {k[len("_orig_mod."):] if k.startswith("_orig_mod.") else k: v for k, v in sd.items()}
+    xe = sd.get("x_embedder.weight")
+    if xe is None:
+        return {}
+    hidden = int(xe.shape[0])
+    blocks = [int(k.split(".")[1]) for k in sd if k.startswith("blocks.") and k.split(".")[1].isdigit()]
+    out = {"hidden_size": hidden}
+    if blocks:
+        out["depth"] = max(blocks) + 1
+    if hidden % 64 == 0:
+        out["num_heads"] = hidden // 64
+    return out
+
+
 def load_pretrained(model, ckpt_path):
     """Load the slim production checkpoint (model-only, prefixes stripped)."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False, mmap=True)
