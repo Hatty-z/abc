@@ -40,14 +40,18 @@ def resize_with_pad(img_hwc, target_h=224, target_w=224):
     if (h, w) == (target_h, target_w):
         return img_hwc
     ratio = max(w / target_w, h / target_h)
-    new_h = max(1, int(round(h / ratio)))
-    new_w = max(1, int(round(w / ratio)))
+    # Match the training/deploy resize used for this checkpoint: plain bilinear
+    # WITHOUT antialiasing and floor sizing (equivalent to cv2 INTER_LINEAR). The
+    # antialias low-pass shifted the downscaled 640x480->224 image off the
+    # distribution DINOv3 was fed at train time, degrading the vision features.
+    new_h = max(1, int(h / ratio))
+    new_w = max(1, int(w / ratio))
     resized = F.interpolate(
         img_hwc.permute(2, 0, 1).unsqueeze(0),
         size=(new_h, new_w),
         mode="bilinear",
         align_corners=False,
-        antialias=True,
+        antialias=False,
     ).squeeze(0)
     pad_h0 = (target_h - new_h) // 2
     pad_h1 = target_h - new_h - pad_h0
