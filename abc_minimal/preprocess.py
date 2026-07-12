@@ -40,10 +40,10 @@ def resize_with_pad(img_hwc, target_h=224, target_w=224):
     if (h, w) == (target_h, target_w):
         return img_hwc
     ratio = max(w / target_w, h / target_h)
-    # Match the training/deploy resize used for this checkpoint: plain bilinear
-    # WITHOUT antialiasing and floor sizing (equivalent to cv2 INTER_LINEAR). The
-    # antialias low-pass shifted the downscaled 640x480->224 image off the
-    # distribution DINOv3 was fed at train time, degrading the vision features.
+    # Match the reference deploy resize: market42's agent downsizes each camera with
+    # cv2.resize(INTER_LINEAR) (plain bilinear, NO antialias low-pass, floor sizing)
+    # before the policy sees it, so replicate that here rather than the antialiased
+    # torch path. align_corners=False + [0,1] clamp keeps values in range.
     new_h = max(1, int(h / ratio))
     new_w = max(1, int(w / ratio))
     resized = F.interpolate(
@@ -52,7 +52,7 @@ def resize_with_pad(img_hwc, target_h=224, target_w=224):
         mode="bilinear",
         align_corners=False,
         antialias=False,
-    ).squeeze(0)
+    ).squeeze(0).clamp(0.0, 1.0)
     pad_h0 = (target_h - new_h) // 2
     pad_h1 = target_h - new_h - pad_h0
     pad_w0 = (target_w - new_w) // 2
