@@ -329,9 +329,26 @@ def main(config: TrainConfig):
             else:
                 p.requires_grad_(True)   # small heads/embedders outside the DiT stack
         if rank == 0:
-            trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-            print(f"LoRA enabled: wrapped {n_wrapped} Linear layers (rank {config.lora_rank}), "
-                  f"{trainable/1e6:.1f}M trainable params", flush=True)
+            lora_p = non_lora_p = frozen_p = 0
+            for name, p in model.named_parameters():
+                if not p.requires_grad:
+                    frozen_p += p.numel()
+                elif "lora_a" in name or "lora_b" in name:
+                    lora_p += p.numel()
+                else:
+                    non_lora_p += p.numel()
+            total = lora_p + non_lora_p + frozen_p
+            trainable = lora_p + non_lora_p
+            m = 1e6
+            print(
+                f"LoRA enabled: wrapped {n_wrapped} Linear layers (rank {config.lora_rank}).\n"
+                f"  trainable {trainable/m:.1f}M / {total/m:.1f}M "
+                f"({100 * trainable / max(total, 1):.2f}%)\n"
+                f"    - LoRA adapters:            {lora_p/m:.1f}M\n"
+                f"    - non-LoRA (heads/embedders): {non_lora_p/m:.1f}M\n"
+                f"  frozen {frozen_p/m:.1f}M (DiT attn/norm + LoRA bases + DINOv3 vision)",
+                flush=True,
+            )
 
     model = model.to(device)
 
